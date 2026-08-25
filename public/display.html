@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>メントスコーラ - 表示機</title>
+<style>
+  :root {
+    --bg: #060a12;
+    --card: #121a2b;
+    --accent: #ffce54;
+    --accent2: #ff5a5a;
+    --miss: #4a5568;
+    --cola: #4a2a12;
+    --cola-light: #7a4418;
+    --text: #e8edf5;
+    --text-dim: #8b96ab;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: radial-gradient(circle at 50% 0%, #10192c, var(--bg) 70%);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    overflow: hidden;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    padding: 16px;
+  }
+  h1 { font-size: 24px; margin: 0 0 4px; text-align: center; }
+  .sub { color: var(--text-dim); font-size: 14px; margin-bottom: 14px; text-align: center; }
+
+  .panel {
+    background: rgba(18,26,43,0.7);
+    border-radius: 22px;
+    padding: 26px 40px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .room-code { font-size: 84px; font-weight: 800; letter-spacing: 14px; color: var(--accent); margin: 8px 0; }
+  .hint { color: var(--text-dim); font-size: 15px; }
+
+  .diff-row { display: flex; gap: 12px; justify-content: center; margin-top: 20px; }
+  .diff-btn {
+    padding: 12px 20px; border-radius: 14px; border: 2px solid #2a3650;
+    background: #1b2536; color: var(--text); font-size: 15px; font-weight: 700; cursor: pointer;
+  }
+  .diff-btn.selected { border-color: var(--accent); background: #2a2410; color: var(--accent); }
+
+  .start-btn {
+    margin-top: 20px; padding: 16px 44px; font-size: 19px; font-weight: 800;
+    border: none; border-radius: 999px; background: var(--accent2); color: #300; cursor: pointer;
+  }
+  .start-btn:disabled { opacity: 0.35; cursor: default; }
+
+  .stage-wrap { display: none; flex-direction: column; align-items: center; width: 100%; }
+  .countdown-num {
+    font-size: 140px; font-weight: 900; color: var(--accent);
+    text-shadow: 0 0 60px rgba(255,206,84,0.5); position: absolute;
+    top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 5;
+  }
+
+  .field {
+    position: relative;
+    width: min(94vw, 720px);
+    height: min(64vh, 560px);
+    border-radius: 20px;
+    background: linear-gradient(180deg, #0c1120 0%, #131b2d 70%, #1a2334 100%);
+    border: 2px solid #202b42;
+    overflow: hidden;
+  }
+  canvas#particleCanvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 4; }
+
+  .origin-mark {
+    position: absolute;
+    bottom: 14px; left: 50%; transform: translateX(-50%);
+    font-size: 34px;
+  }
+
+  .target {
+    position: absolute;
+    transform: translate(-50%, 50%);
+    display: flex; flex-direction: column; align-items: center;
+    transition: left 0.25s ease, bottom 0.25s ease;
+  }
+  .glass {
+    width: 54px; height: 62px;
+    border-radius: 8px 8px 18px 18px;
+    border: 3px solid #3a4a68;
+    background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0) 30%), #1a2334;
+    overflow: hidden;
+    position: relative;
+  }
+  .glass .glass-liquid {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 45%;
+    background: linear-gradient(180deg, var(--cola-light), var(--cola));
+  }
+  .target-label { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+
+  .mentos-fly {
+    position: absolute;
+    font-size: 26px;
+    transform: translate(-50%, 50%);
+    z-index: 3;
+    display: none;
+  }
+
+  .splat {
+    position: absolute;
+    font-size: 30px;
+    transform: translate(-50%, 50%);
+    z-index: 3;
+    opacity: 0;
+  }
+
+  .hud-row { display: flex; gap: 18px; margin-top: 14px; }
+  .hud-chip {
+    background: #121a2b; border-radius: 12px; padding: 8px 16px; font-size: 13px; color: var(--text-dim);
+  }
+  .hud-chip b { color: var(--text); font-size: 15px; }
+
+  .result-box { display: none; flex-direction: column; align-items: center; margin-top: 16px; }
+  .result-tier { font-size: 38px; font-weight: 900; }
+  .result-score { font-size: 16px; color: var(--text-dim); margin-top: 4px; }
+  .retry-btn {
+    margin-top: 16px; padding: 14px 34px; font-size: 16px; font-weight: 700;
+    border: none; border-radius: 999px; background: var(--accent); color: #332200; cursor: pointer;
+  }
+
+  .status-line { margin-top: 10px; font-size: 13px; color: var(--text-dim); }
+</style>
+</head>
+<body>
+
+  <div class="panel" id="lobbyPanel">
+    <h1>🍬 メントスコーラ「投げ込め！」</h1>
+    <div class="sub">スマホでルームコードを入力して接続してください</div>
+    <div class="room-code" id="roomCode">----</div>
+    <div class="hint" id="lobbyHint">サーバーに接続中…</div>
+
+    <div class="diff-row" id="diffRow" style="display:none;">
+      <button class="diff-btn selected" data-diff="easy">かんたん</button>
+      <button class="diff-btn" data-diff="normal">ふつう</button>
+      <button class="diff-btn" data-diff="hard">むずかしい</button>
+    </div>
+    <button class="start-btn" id="startBtn" style="display:none;">▶ スタート</button>
+  </div>
+
+  <div class="stage-wrap" id="stageWrap">
+    <div class="countdown-num" id="countdownNum" style="display:none;"></div>
+
+    <div class="field" id="field">
+      <canvas id="particleCanvas"></canvas>
+      <div class="origin-mark">🤾</div>
+      <div class="target" id="target">
+        <div class="glass"><div class="glass-liquid"></div></div>
+        <div class="target-label" id="targetLabel">コーラ</div>
+      </div>
+      <div class="mentos-fly" id="mentosFly">🍬</div>
+      <div class="splat" id="splat">💦</div>
+    </div>
+
+    <div class="hud-row" id="hudRow" style="display:none;">
+      <div class="hud-chip">難易度 <b id="diffChip">-</b></div>
+      <div class="hud-chip">スイングパワー <b id="powerChip">-</b></div>
+    </div>
+
+    <div class="result-box" id="resultBox">
+      <div class="result-tier" id="resultTier"></div>
+      <div class="result-score" id="resultScore"></div>
+      <button class="retry-btn" id="retryBtn">🔁 もう一度</button>
+    </div>
+  </div>
+
+  <div class="status-line" id="statusLine"></div>
+
+<script>
+  const roomCodeEl = document.getElementById('roomCode');
+  const lobbyHint = document.getElementById('lobbyHint');
+  const lobbyPanel = document.getElementById('lobbyPanel');
+  const diffRow = document.getElementById('diffRow');
+  const startBtn = document.getElementById('startBtn');
+  const stageWrap = document.getElementById('stageWrap');
+  const countdownNum = document.getElementById('countdownNum');
+  const field = document.getElementById('field');
+  const targetEl = document.getElementById('target');
+  const targetLabel = document.getElementById('targetLabel');
+  const mentosFly = document.getElementById('mentosFly');
+  const splat = document.getElementById('splat');
+  const hudRow = document.getElementById('hudRow');
+  const diffChip = document.getElementById('diffChip');
+  const powerChip = document.getElementById('powerChip');
+  const resultBox = document.getElementById('resultBox');
+  const resultTier = document.getElementById('resultTier');
+  const resultScore = document.getElementById('resultScore');
+  const retryBtn = document.getElementById('retryBtn');
+  const statusLine = document.getElementById('statusLine');
+
+  // ---- 難易度プリセット（距離比率・左右オフセット比率・的の許容半径px） ----
+  const DIFFICULTIES = {
+    easy:   { label: 'かんたん',   distanceRatio: 0.35, offsetRatio: 0.00,  hitRadius: 78, jitterD: 0.04, jitterO: 0.05 },
+    normal: { label: 'ふつう',     distanceRatio: 0.60, offsetRatio: 0.28,  hitRadius: 52, jitterD: 0.05, jitterO: 0.08 },
+    hard:   { label: 'むずかしい', distanceRatio: 0.85, offsetRatio: -0.45, hitRadius: 32, jitterD: 0.05, jitterO: 0.08 },
+  };
+
+  // ---- 投球パワー/方向 → ステージ座標への変換係数（実機での振りの強さに合わせて要調整） ----
+  const POWER_FULL = 55;       // このスイングパワーで最大飛距離に到達する目安
+  const DIR_FULL = 18;         // 加速度x成分がこの値で画面端まで振れる目安
+  const DIR_TO_OFFSET_RATIO = 1.0;
+
+  let selectedDifficulty = 'easy';
+
+  diffRow.querySelectorAll('.diff-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      diffRow.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      selectedDifficulty = btn.dataset.diff;
+    });
+  });
+
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}`);
+
+  ws.addEventListener('open', () => { ws.send(JSON.stringify({ type: 'create_room' })); });
+  ws.addEventListener('close', () => { statusLine.textContent = 'サーバーとの接続が切れました。ページを再読み込みしてください。'; });
+
+  ws.addEventListener('message', (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === 'room_created') {
+      roomCodeEl.textContent = msg.code;
+      lobbyHint.textContent = 'スマホの投球機でこのコードを入力してください';
+    } else if (msg.type === 'controller_joined') {
+      lobbyHint.textContent = '📱 スマホが接続しました！難易度を選んでスタート';
+      diffRow.style.display = 'flex';
+      startBtn.style.display = 'inline-block';
+    } else if (msg.type === 'round_start') {
+      runRound(msg.startAt, msg.timeoutMs, msg.difficulty);
+    } else if (msg.type === 'throw_received') {
+      handleThrow(msg.power, msg.dirX);
+    } else if (msg.type === 'throw_timeout') {
+      handleTimeout();
+    } else if (msg.type === 'peer_disconnected') {
+      statusLine.textContent = 'スマホとの接続が切れました。もう一度接続してください。';
+    }
+  });
+
+  startBtn.addEventListener('click', () => {
+    ws.send(JSON.stringify({ type: 'request_start', difficulty: selectedDifficulty, timeoutMs: 8000 }));
+    startBtn.disabled = true;
+  });
+  retryBtn.addEventListener('click', () => {
+    ws.send(JSON.stringify({ type: 'reset_round' }));
+    resetToLobby();
+  });
+
+  function resetToLobby() {
+    lobbyPanel.style.display = 'block';
+    stageWrap.style.display = 'none';
+    resultBox.style.display = 'none';
+    hudRow.style.display = 'none';
+    mentosFly.style.display = 'none';
+    splat.style.opacity = 0;
+    startBtn.disabled = false;
+  }
+
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  // ---- 座標系ヘルパー ----
+  function fieldRect() { return field.getBoundingClientRect(); }
+  function originPoint() {
+    const r = fieldRect();
+    return { x: r.width / 2, y: r.height - 30 };
+  }
+  function ratiosToPoint(distanceRatio, offsetRatio) {
+    const r = fieldRect();
+    const o = originPoint();
+    const maxDist = r.height - 90;
+    const maxOffset = (r.width / 2) - 50;
+    return {
+      x: o.x + offsetRatio * maxOffset,
+      y: o.y - distanceRatio * maxDist,
+    };
+  }
+
+  let currentTarget = null; // { point, hitRadius, difficulty }
+
+  function placeTarget(difficulty) {
+    const preset = DIFFICULTIES[difficulty];
+    const distanceRatio = clamp(preset.distanceRatio + (Math.random() - 0.5) * 2 * preset.jitterD, 0.15, 0.95);
+    const offsetRatio = clamp(preset.offsetRatio + (Math.random() - 0.5) * 2 * preset.jitterO, -0.9, 0.9);
+    const point = ratiosToPoint(distanceRatio, offsetRatio);
+    const scale = 1 - distanceRatio * 0.35; // 遠いほど小さく描画（奥行き感）
+    targetEl.style.left = point.x + 'px';
+    targetEl.style.bottom = (fieldRect().height - point.y) + 'px';
+    targetEl.style.transformOrigin = 'bottom center';
+    targetEl.querySelector('.glass').style.transform = `scale(${scale})`;
+    targetLabel.textContent = preset.label;
+    currentTarget = { point, hitRadius: preset.hitRadius * (0.7 + scale * 0.3), difficulty };
+  }
+
+  function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+  async function runRound(startAt, timeoutMs, difficulty) {
+    lobbyPanel.style.display = 'none';
+    stageWrap.style.display = 'flex';
+    resultBox.style.display = 'none';
+    hudRow.style.display = 'none';
+    mentosFly.style.display = 'none';
+    splat.style.opacity = 0;
+    diffChip.textContent = DIFFICULTIES[difficulty].label;
+    powerChip.textContent = '-';
+    countdownNum.style.display = 'block';
+
+    resizeCanvas();
+    placeTarget(difficulty);
+
+    const delay = startAt - Date.now();
+    await sleep(Math.max(0, delay));
+
+    for (const n of ['3', '2', '1', '投げろ！']) {
+      countdownNum.textContent = n;
+      await sleep(650);
+    }
+    countdownNum.style.display = 'none';
+    hudRow.style.display = 'flex';
+  }
+
+  function handleTimeout() {
+    resultTier.textContent = '⏱ 時間切れ…投げられなかった';
+    resultTier.style.color = 'var(--miss)';
+    resultScore.textContent = '難易度: ' + DIFFICULTIES[currentTarget.difficulty].label;
+    resultBox.style.display = 'flex';
+  }
+
+  async function handleThrow(power, dirX) {
+    powerChip.textContent = power;
+    const o = originPoint();
+    const distanceRatioThrow = clamp(power / POWER_FULL, 0, 1.15);
+    const offsetRatioThrow = clamp((dirX / DIR_FULL) * DIR_TO_OFFSET_RATIO, -1.1, 1.1);
+    const landing = ratiosToPoint(distanceRatioThrow, offsetRatioThrow);
+
+    await animateMentos(o, landing);
+
+    const dx = landing.x - currentTarget.point.x;
+    const dy = landing.y - currentTarget.point.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const hit = dist <= currentTarget.hitRadius;
+
+    if (hit) {
+      launchEruption(currentTarget.point, power);
+      await sleep(300);
+      resultTier.textContent = '🎉 命中！コーラが噴き出た！';
+      resultTier.style.color = 'var(--accent2)';
+    } else {
+      showSplat(landing);
+      resultTier.textContent = '💦 はずれ…';
+      resultTier.style.color = 'var(--miss)';
+    }
+    resultScore.textContent = `難易度: ${DIFFICULTIES[currentTarget.difficulty].label} / パワー: ${power} / 命中まで ${Math.round(dist)}px`;
+
+    setTimeout(() => { resultBox.style.display = 'flex'; }, hit ? 700 : 300);
+  }
+
+  function animateMentos(from, to) {
+    return new Promise((resolve) => {
+      mentosFly.style.display = 'block';
+      const duration = 480;
+      const start = performance.now();
+      function step(now) {
+        const t = Math.min(1, (now - start) / duration);
+        const ease = t; // 単純な線形（好みでイージングを変更可）
+        const x = from.x + (to.x - from.x) * ease;
+        // 放物線っぽい高さの盛り上がりを付与
+        const arc = Math.sin(Math.PI * t) * 40;
+        const y = from.y + (to.y - from.y) * ease - arc;
+        mentosFly.style.left = x + 'px';
+        mentosFly.style.bottom = (fieldRect().height - y) + 'px';
+        if (t < 1) {
+          requestAnimationFrame(step);
+        } else {
+          mentosFly.style.display = 'none';
+          resolve();
+        }
+      }
+      requestAnimationFrame(step);
+    });
+  }
+
+  function showSplat(point) {
+    splat.style.left = point.x + 'px';
+    splat.style.bottom = (fieldRect().height - point.y) + 'px';
+    splat.style.opacity = 1;
+    splat.style.transform = 'translate(-50%, 50%) scale(0.6)';
+    requestAnimationFrame(() => {
+      splat.style.transition = 'transform 0.3s ease, opacity 0.6s ease 0.4s';
+      splat.style.transform = 'translate(-50%, 50%) scale(1.3)';
+    });
+    setTimeout(() => { splat.style.opacity = 0; splat.style.transition = 'none'; }, 1000);
+  }
+
+  // --- 噴射パーティクル ---
+  const canvas = document.getElementById('particleCanvas');
+  const ctx = canvas.getContext('2d');
+  function resizeCanvas() {
+    const rect = fieldRect();
+    canvas.width = rect.width * devicePixelRatio;
+    canvas.height = rect.height * devicePixelRatio;
+  }
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  let particles = [];
+  let animating = false;
+
+  function launchEruption(targetPoint, power) {
+    const score = 200 + power * 6; // 演出のにぎやかさに変換
+    const count = Math.max(40, Math.min(240, Math.round(score * 0.35)));
+    const powerVis = Math.max(5, Math.min(16, score / 60));
+    const originX = targetPoint.x * devicePixelRatio;
+    const originY = targetPoint.y * devicePixelRatio;
+
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.random() - 0.5) * 1.0 - Math.PI / 2;
+      const speed = powerVis * (0.5 + Math.random());
+      particles.push({
+        x: originX, y: originY,
+        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        life: 55 + Math.random() * 35, r: 2 + Math.random() * 3,
+        color: Math.random() > 0.3 ? 'rgba(122,68,24,0.9)' : 'rgba(255,236,200,0.9)',
+      });
+    }
+    if (!animating) { animating = true; requestAnimationFrame(stepParticles); }
+  }
+
+  function stepParticles() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const gravity = 0.35 * devicePixelRatio;
+    particles.forEach(p => {
+      p.vy += gravity;
+      p.x += p.vx * devicePixelRatio * 0.6;
+      p.y += p.vy * devicePixelRatio * 0.6;
+      p.life -= 1;
+      ctx.beginPath();
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = Math.max(0, Math.min(1, p.life / 40));
+      ctx.arc(p.x, p.y, p.r * devicePixelRatio, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+    particles = particles.filter(p => p.life > 0 && p.y < canvas.height + 60);
+
+    if (particles.length > 0) requestAnimationFrame(stepParticles);
+    else animating = false;
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "name": "mentos-cola-game",
+  "version": "1.0.0",
+  "description": "PC×スマホで遊ぶ「メントスコーラ 投げ込め！」ゲーム。スマホを投げる動作でメントスを投下し、難易度ごとに位置が変わるコーラのグラスに命中させる。",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "ws": "^8.21.3"
+  }
+}

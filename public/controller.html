@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>メントスコーラ - 投球機</title>
+<style>
+  :root {
+    --bg: #0b0f1a;
+    --card: #141b2b;
+    --accent: #ff5a5a;
+    --accent2: #ffce54;
+    --text: #e8edf5;
+    --text-dim: #8b96ab;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    overflow: hidden;
+    user-select: none;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    text-align: center;
+  }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  .sub { color: var(--text-dim); font-size: 13px; margin-bottom: 24px; }
+
+  .screen { width: 100%; max-width: 420px; display: none; flex-direction: column; align-items: center; }
+
+  .code-input { display: flex; gap: 10px; justify-content: center; margin-bottom: 20px; }
+  .code-input input {
+    width: 52px; height: 64px; text-align: center; font-size: 30px;
+    border-radius: 12px; border: 2px solid #232d42; background: #0e1420; color: var(--text);
+  }
+  .big-btn {
+    width: 100%; padding: 18px; border-radius: 14px; border: none;
+    font-size: 17px; font-weight: 700; background: var(--accent2); color: #332200;
+  }
+  .big-btn:disabled { opacity: 0.4; }
+  .status { margin-top: 16px; font-size: 13px; color: var(--text-dim); min-height: 18px; }
+
+  .wait-icon { font-size: 64px; margin-bottom: 10px; }
+
+  .throw-icon {
+    font-size: 120px;
+    transition: transform 0.08s ease-out;
+  }
+  .throw-label { font-size: 22px; font-weight: 800; margin-top: 6px; color: var(--accent2); }
+  .throw-hint { font-size: 13px; color: var(--text-dim); margin-top: 6px; }
+  .timer-bar-outer {
+    width: 100%; height: 12px; background: #1b2536; border-radius: 999px; margin-top: 20px; overflow: hidden;
+  }
+  .timer-bar-inner {
+    height: 100%; width: 100%;
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+    transform-origin: left;
+  }
+  .difficulty-badge {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 4px 14px;
+    border-radius: 999px;
+    background: #1b2536;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .power-readout { margin-top: 16px; font-size: 14px; color: var(--text-dim); }
+  .power-readout b { color: var(--text); font-size: 22px; }
+</style>
+</head>
+<body>
+
+  <div class="screen" id="joinScreen" style="display:flex;">
+    <h1>🍬 メントスコーラ 投球機</h1>
+    <div class="sub">PC画面に表示されている4桁のルームコードを入力してください</div>
+    <div class="code-input">
+      <input type="tel" maxlength="1" inputmode="numeric" class="digit" />
+      <input type="tel" maxlength="1" inputmode="numeric" class="digit" />
+      <input type="tel" maxlength="1" inputmode="numeric" class="digit" />
+      <input type="tel" maxlength="1" inputmode="numeric" class="digit" />
+    </div>
+    <button class="big-btn" id="joinBtn">📳 モーション許可して接続</button>
+    <div class="status" id="joinStatus"></div>
+  </div>
+
+  <div class="screen" id="waitScreen">
+    <div class="wait-icon">🔗</div>
+    <h1>接続完了！</h1>
+    <div class="sub">PC画面で難易度を選んで「スタート」が押されるのを待っています…</div>
+  </div>
+
+  <div class="screen" id="throwScreen">
+    <div class="difficulty-badge" id="difficultyBadge">難易度: -</div>
+    <div class="throw-icon" id="throwIcon">🍬</div>
+    <div class="throw-label" id="throwLabel">投げる準備！</div>
+    <div class="throw-hint">スマホを野球のボールを投げるように、腕を振ってください</div>
+    <div class="timer-bar-outer"><div class="timer-bar-inner" id="timerBar"></div></div>
+    <div class="power-readout" id="powerReadout" style="visibility:hidden;">スイングパワー <b id="powerValue">0</b></div>
+  </div>
+
+  <div class="screen" id="doneScreen">
+    <div class="wait-icon">🎉</div>
+    <h1 id="doneTitle">投げた！</h1>
+    <div class="sub">結果はPC画面を見てね</div>
+    <button class="big-btn" id="retryBtn">もう一度の準備をする</button>
+  </div>
+
+<script>
+  const screens = {
+    join: document.getElementById('joinScreen'),
+    wait: document.getElementById('waitScreen'),
+    throwS: document.getElementById('throwScreen'),
+    done: document.getElementById('doneScreen'),
+  };
+  const joinBtn = document.getElementById('joinBtn');
+  const joinStatus = document.getElementById('joinStatus');
+  const digits = [...document.querySelectorAll('.digit')];
+  const difficultyBadge = document.getElementById('difficultyBadge');
+  const throwIcon = document.getElementById('throwIcon');
+  const throwLabel = document.getElementById('throwLabel');
+  const timerBar = document.getElementById('timerBar');
+  const powerReadout = document.getElementById('powerReadout');
+  const powerValue = document.getElementById('powerValue');
+  const doneTitle = document.getElementById('doneTitle');
+  const retryBtn = document.getElementById('retryBtn');
+
+  const DIFF_LABEL = { easy: 'かんたん', normal: 'ふつう', hard: 'むずかしい' };
+
+  digits.forEach((el, i) => {
+    el.addEventListener('input', () => {
+      el.value = el.value.replace(/\D/g, '').slice(0, 1);
+      if (el.value && digits[i + 1]) digits[i + 1].focus();
+    });
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace' && !el.value && digits[i - 1]) digits[i - 1].focus();
+    });
+  });
+  function getCode() { return digits.map(d => d.value).join(''); }
+
+  function showScreen(name) {
+    Object.values(screens).forEach(s => { s.style.display = 'none'; });
+    screens[name].style.display = 'flex';
+  }
+
+  // --- WebSocket ---
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}`);
+
+  ws.addEventListener('open', () => { joinStatus.textContent = 'サーバーに接続しました'; });
+  ws.addEventListener('close', () => { joinStatus.textContent = 'サーバーとの接続が切れました'; });
+
+  ws.addEventListener('message', (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === 'joined_ok') {
+      showScreen('wait');
+    } else if (msg.type === 'join_error') {
+      joinStatus.textContent = '❌ ' + msg.message;
+      joinBtn.disabled = false;
+    } else if (msg.type === 'round_start') {
+      startThrowRound(msg.startAt, msg.timeoutMs, msg.difficulty);
+    } else if (msg.type === 'peer_disconnected') {
+      joinStatus.textContent = 'PC側との接続が切れました。コードを入力し直してください。';
+      showScreen('join');
+    } else if (msg.type === 'reset_round') {
+      showScreen('wait');
+    }
+  });
+
+  function requestMotionPermissionIfNeeded() {
+    if (typeof DeviceMotionEvent !== 'undefined' &&
+        typeof DeviceMotionEvent.requestPermission === 'function') {
+      return DeviceMotionEvent.requestPermission();
+    }
+    return Promise.resolve('granted');
+  }
+
+  joinBtn.addEventListener('click', async () => {
+    const code = getCode();
+    if (code.length !== 4) {
+      joinStatus.textContent = '4桁のコードを入力してください';
+      return;
+    }
+    joinBtn.disabled = true;
+    joinStatus.textContent = '許可を確認中…';
+    try {
+      const perm = await requestMotionPermissionIfNeeded();
+      if (perm !== 'granted') {
+        joinStatus.textContent = 'モーションセンサーが許可されませんでした';
+        joinBtn.disabled = false;
+        return;
+      }
+    } catch (e) {
+      joinStatus.textContent = 'モーションセンサーを取得できません（HTTPS接続が必要な場合があります）';
+      joinBtn.disabled = false;
+      return;
+    }
+    joinStatus.textContent = '接続中…';
+    ws.send(JSON.stringify({ type: 'join_room', code }));
+  });
+
+  retryBtn.addEventListener('click', () => {
+    ws.send(JSON.stringify({ type: 'reset_round' }));
+    showScreen('wait');
+  });
+
+  // --- 投球（スイング）検知 ---
+  // 「振り続けてエネルギーを貯める」のではなく、1回の大きな振り＝1投とみなし、
+  // そのピークの強さ(power)と左右方向(dirX)を1回だけ検出してPCへ送る。
+  const THROW_THRESHOLD = 14;   // このジャーク(急な加速度変化)を超えたら「投げた」と判定開始
+  const CAPTURE_WINDOW_MS = 160; // 閾値を超えてから、真のピークを探すために少しだけ観測を続ける時間
+
+  let listening = false;
+  let prevMag = null;
+  let capturing = false;
+  let captureStartAt = 0;
+  let peakPower = 0;
+  let peakDirX = 0;
+  let roundTimeoutTimer = null;
+  let thrown = false;
+
+  function onMotion(event) {
+    if (!listening || thrown) return;
+    const raw = (event.acceleration && event.acceleration.x !== null)
+      ? event.acceleration
+      : event.accelerationIncludingGravity;
+    if (!raw || raw.x === null) return;
+
+    const mag = Math.sqrt(raw.x * raw.x + raw.y * raw.y + raw.z * raw.z);
+    if (prevMag !== null) {
+      const jerk = Math.abs(mag - prevMag);
+
+      // jerk(急激な変化)はあくまで「振り始め」を検知するトリガーとしてのみ使う。
+      // ピークの強さ・方向は生の加速度の大きさ(mag)で追跡する。
+      // jerkでピークを追うと、振り終えて静止に戻る瞬間の急減速まで
+      // 「より強いピーク」と誤認識してしまい、方向(peakDirX)が
+      // 減速時の値に上書きされてしまうため。
+      if (!capturing && jerk > THROW_THRESHOLD) {
+        capturing = true;
+        captureStartAt = performance.now();
+        peakPower = mag;
+        peakDirX = raw.x;
+      } else if (capturing) {
+        if (mag > peakPower) {
+          peakPower = mag;
+          peakDirX = raw.x;
+        }
+        throwIcon.style.transform = `scale(1.15) rotate(${(Math.random() - 0.5) * 40}deg)`;
+        if (performance.now() - captureStartAt > CAPTURE_WINDOW_MS) {
+          finalizeThrow();
+        }
+      }
+    }
+    prevMag = mag;
+  }
+
+  function finalizeThrow() {
+    if (thrown) return;
+    thrown = true;
+    listening = false;
+    window.removeEventListener('devicemotion', onMotion);
+    if (roundTimeoutTimer) clearTimeout(roundTimeoutTimer);
+
+    powerValue.textContent = Math.round(peakPower);
+    powerReadout.style.visibility = 'visible';
+    throwLabel.textContent = '投げた！';
+    if ('vibrate' in navigator) {
+      navigator.vibrate(Math.min(200, 40 + peakPower * 3));
+    }
+
+    ws.send(JSON.stringify({ type: 'throw', power: Math.round(peakPower), dirX: Math.round(peakDirX * 10) / 10 }));
+
+    doneTitle.textContent = '🍬 投げた！';
+    setTimeout(() => showScreen('done'), 500);
+  }
+
+  function startThrowRound(startAt, timeoutMs, difficulty) {
+    showScreen('throwS');
+    difficultyBadge.textContent = '難易度: ' + (DIFF_LABEL[difficulty] || difficulty);
+    throwLabel.textContent = 'まもなくスタート…';
+    powerReadout.style.visibility = 'hidden';
+    timerBar.style.transition = 'none';
+    timerBar.style.width = '100%';
+    thrown = false;
+    capturing = false;
+    prevMag = null;
+    peakPower = 0;
+    peakDirX = 0;
+
+    const delay = Math.max(0, startAt - Date.now());
+    setTimeout(() => {
+      listening = true;
+      window.addEventListener('devicemotion', onMotion);
+      throwLabel.textContent = '今だ！投げろ！';
+
+      requestAnimationFrame(() => {
+        timerBar.style.transition = `width ${timeoutMs}ms linear`;
+        timerBar.style.width = '0%';
+      });
+
+      roundTimeoutTimer = setTimeout(() => {
+        if (thrown) return;
+        listening = false;
+        window.removeEventListener('devicemotion', onMotion);
+        ws.send(JSON.stringify({ type: 'throw_timeout' }));
+        doneTitle.textContent = '⏱ 時間切れ…';
+        showScreen('done');
+      }, timeoutMs);
+    }, delay);
+  }
+</script>
+</body>
+</html>
