@@ -52,8 +52,8 @@ HTTPS配信になるのでiPhoneのモーションセンサー許可の問題も
 4. **デプロイ完了を待つ**（数分）
    - `https://<サービス名>.onrender.com` のようなURLが発行される
 5. **PCとスマホでアクセスする**
-   - PC: `https://<サービス名>.onrender.com/display.html`
-   - スマホ: `https://<サービス名>.onrender.com/controller.html`
+   - PC: `https://srv-da6r2ce1egvs739j5mk0.onrender.com/display.html`
+   - スマホ: `https://srv-da6r2ce1egvs739j5mk0.onrender.com/controller.html`
    - Wi-Fiが違っても、お互いインターネットに繋がっていればOK（同じWi-Fiである必要はありません）
 
 > ⚠️ Render無料プランは一定時間アクセスがないとスリープします。しばらく放置した後に開くと、
