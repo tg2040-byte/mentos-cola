@@ -170,6 +170,6 @@ wss.on('connection', (ws) => {
 
 httpServer.listen(PORT, () => {
   console.log(`メントスコーラゲーム サーバー起動: http://localhost:${PORT}`);
-  console.log(`PC(表示側):    http:// 192.168.11.6:${PORT}/display.html`);
-  console.log(`スマホ(操作側): http:// 192.168.11.6:${PORT}/controller.html`);
+  console.log(`PC(表示側):    http://192.168.11.6:${PORT}/display.html`);
+  console.log(`スマホ(操作側): http://192.168.11.6:${PORT}/controller.html`);
 });
