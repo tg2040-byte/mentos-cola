@@ -57,6 +57,12 @@ const wss = new WebSocket.Server({ server: httpServer });
 /** roomCode -> { display: ws|null, controller: ws|null } */
 const rooms = new Map();
 
+// 挑戦者の記録（サーバーのメモリ上に保持。プロセス再起動で消える点に注意）
+/** @type {Array<{id:number, name:string, timeMs:number, difficulty:string, ts:number}>} */
+const leaderboard = [];
+let nextScoreId = 1;
+const MAX_LEADERBOARD_ENTRIES = 200;
+
 function generateRoomCode() {
   let code;
   do {
@@ -69,6 +75,11 @@ function send(ws, obj) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(obj));
   }
+}
+
+function broadcastLeaderboard() {
+  const payload = { type: 'leaderboard_update', leaderboard };
+  wss.clients.forEach((client) => send(client, payload));
 }
 
 function cleanupSocket(ws) {
@@ -106,6 +117,23 @@ wss.on('connection', (ws) => {
         ws.roomCode = code;
         ws.role = 'display';
         send(ws, { type: 'room_created', code });
+        send(ws, { type: 'leaderboard_update', leaderboard });
+        break;
+      }
+
+      case 'new_challenger': {
+        // PC側は繋ぎっぱなしのまま、新しい挑戦者のスマホ用に新しいルームコードを発行する。
+        // 前の挑戦者のスマホとのペアリングは切り離す。
+        const oldRoom = rooms.get(ws.roomCode);
+        if (oldRoom) {
+          send(oldRoom.controller, { type: 'peer_disconnected' });
+          if (oldRoom.controller) oldRoom.controller.roomCode = null;
+          rooms.delete(ws.roomCode);
+        }
+        const code = generateRoomCode();
+        rooms.set(code, { display: ws, controller: null });
+        ws.roomCode = code;
+        send(ws, { type: 'room_created', code });
         break;
       }
 
@@ -124,14 +152,16 @@ wss.on('connection', (ws) => {
       }
 
       case 'request_start': {
+        // タイムアタック開始。命中するまで何度でも投げ続けられるので、
+        // ここでは「開始時刻」だけ両者に同時配信し、あとはスマホ側が自走して
+        // 投げる→結果を受け取る→(外れたら)再待機、を繰り返す。
         const room = rooms.get(ws.roomCode);
         if (!room) return;
-        // 少し先の時刻を「開始時刻」として両者に同時配信し、体感の同期ズレを減らす
         const startAt = Date.now() + 600;
-        const timeoutMs = msg.timeoutMs || 8000;
         const difficulty = msg.difficulty || 'normal';
-        send(room.display, { type: 'round_start', startAt, timeoutMs, difficulty });
-        send(room.controller, { type: 'round_start', startAt, timeoutMs, difficulty });
+        const name = (msg.name || '').toString().slice(0, 20) || '名無し';
+        send(room.display, { type: 'round_start', startAt, difficulty, name });
+        send(room.controller, { type: 'round_start', startAt, difficulty, name });
         break;
       }
 
@@ -143,11 +173,39 @@ wss.on('connection', (ws) => {
         break;
       }
 
-      case 'throw_timeout': {
-        // 制限時間内に投球が検知できなかった場合
+      case 'throw_result': {
+        // PC側で判定した命中/外れの結果をスマホへ中継。
+        // 外れなら、スマホは自動で次の1投の待機に戻る。
         const room = rooms.get(ws.roomCode);
         if (!room) return;
-        send(room.display, { type: 'throw_timeout' });
+        // hitの場合、PC側が計測した正式なタイムも一緒に渡す（スマホ側で別に計測すると
+        // カウントダウン分のズレが出るため、表示は必ずPC側の値を使わせる）
+        send(room.controller, { type: 'throw_result', result: msg.result, elapsedMs: msg.elapsedMs });
+        break;
+      }
+
+      case 'submit_score': {
+        // 命中してタイムアタック終了。記録をランキングに追加して全員に配信する。
+        const timeMs = Number(msg.timeMs);
+        if (!Number.isFinite(timeMs) || timeMs <= 0) return;
+        const entry = {
+          id: nextScoreId++,
+          name: (msg.name || '').toString().slice(0, 20) || '名無し',
+          timeMs,
+          difficulty: msg.difficulty || 'normal',
+          ts: Date.now(),
+        };
+        leaderboard.push(entry);
+        leaderboard.sort((a, b) => a.timeMs - b.timeMs);
+        if (leaderboard.length > MAX_LEADERBOARD_ENTRIES) {
+          leaderboard.length = MAX_LEADERBOARD_ENTRIES;
+        }
+        broadcastLeaderboard();
+        break;
+      }
+
+      case 'get_leaderboard': {
+        send(ws, { type: 'leaderboard_update', leaderboard });
         break;
       }
 
@@ -169,7 +227,16 @@ wss.on('connection', (ws) => {
 });
 
 httpServer.listen(PORT, () => {
-  console.log(`メントスコーラゲーム サーバー起動: http://localhost:${PORT}`);
-  console.log(`PC(表示側):    http://<このPCのIP>:${PORT}/display.html`);
-  console.log(`スマホ(操作側): http://<このPCのIP>:${PORT}/controller.html`);
+  console.log(`メントスコーラゲーム サーバー起動 (port ${PORT})`);
+
+  if (process.env.RENDER_EXTERNAL_URL) {
+    // Render等、公開URLが環境変数で分かる場合はそれを案内する
+    const base = process.env.RENDER_EXTERNAL_URL;
+    console.log(`PC(表示側):    ${base}/display.html`);
+    console.log(`スマホ(操作側): ${base}/controller.html`);
+  } else {
+    // ローカル起動時は、同じWi-Fi内のPCのIPアドレスでアクセスする
+    console.log(`PC(表示側):    http://localhost:${PORT}/display.html`);
+    console.log(`スマホ(操作側): http://<このPCのIP>:${PORT}/controller.html  ※PCのIPアドレスに置き換えてください`);
+  }
 });
